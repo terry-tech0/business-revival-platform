@@ -1,12 +1,22 @@
 """
 matching.py — 人財マッチング & スコアリング ロジック
 =====================================================
-【担当】ランキング（スコアリング）担当
-【役割】解決策のスコアリング表示ロジックと、社員DBからの最適チーム選抜を行う。
+【担当者】みっきー（ランキング担当）
+【役割】解決策のスコアリング表示ロジックと、テクゼロン社員DBからの最適チーム選抜を行う。
         参考アプリの ranking.py に相当する。
 
-このモジュールは ai_engine.py が返した生データを加工し、
-ランキング付きの表示データやチーム編成データに変換する。
+【TODO（写経ポイント）】
+  1. SCORING_AXES           ★ 定数リストの定義を学ぶ
+  2. rank_solutions()       ★ sorted() + lambda でカスタムソートを学ぶ
+  3. format_score_display()  ★ 文字列フォーマットを学ぶ
+  4. build_team_for_solution() ★ DB → AI → 結果返却の連携を学ぶ
+  5. MBTI_COMPLEMENTS       ★ 辞書（dict）の定義を学ぶ
+  6. get_mbti_compatibility_note() ★ リスト内包表記とカウントロジックを学ぶ
+
+【ヒント】
+  - このモジュールは ai_engine.py と database.py の両方を使う「橋渡し役」
+  - ランキングは sorted() + lambda で簡単に実装できる
+  - チーム編成は DB → AI に渡す → 結果を返す の3ステップ
 """
 
 import json
@@ -16,7 +26,7 @@ from ai_engine import match_team
 
 # ---------- 解決策のスコアリング・ランキング ---------- #
 
-# スコアリング軸の定義（表示名とキー）
+# ★ スコアリング5軸の定義（app.py からも参照される定数）
 SCORING_AXES = [
     ("market_size", "市場規模・成長性"),
     ("feasibility", "実現可能性"),
@@ -29,13 +39,8 @@ SCORING_AXES = [
 def rank_solutions(solutions: list[dict]) -> list[dict]:
     """
     解決策をスコアの合計値で降順ソートする。
-    各解決策の scoring.total を基準にランキングする。
-
-    Args:
-        solutions: ai_engine.generate_solutions の返り値の "solutions" リスト
-
-    Returns:
-        list[dict]: total の降順でソートされた解決策リスト（rank フィールドを追加）
+    ★ sorted() の key に lambda を使うカスタムソートを学ぶ
+    ★ enumerate() で順位番号を付与する方法を学ぶ
     """
     # total でソート（高い順）
     sorted_solutions = sorted(
@@ -54,12 +59,7 @@ def rank_solutions(solutions: list[dict]) -> list[dict]:
 def format_score_display(scoring: dict) -> str:
     """
     スコアリング結果を見やすい文字列に変換する。
-
-    Args:
-        scoring: {market_size: {score, reason}, ...}
-
-    Returns:
-        str: 表示用の文字列
+    ★ "★" * score で星を繰り返し表示する方法を学ぶ
     """
     lines = []
     for key, label in SCORING_AXES:
@@ -77,26 +77,20 @@ def format_score_display(scoring: dict) -> str:
 
 # ---------- チームマッチング ---------- #
 
-
 def build_team_for_solution(solution_title: str, solution_desc: str) -> dict:
     """
     選択された解決策に最適な4人チームを編成する。
+    ★ DB → JSON変換 → AI呼び出し の連携パターンを学ぶ
 
     1. DB から全社員を取得
-    2. ai_engine.match_team に社員リスト+解決策を渡す
-    3. AIの選抜結果を返す
-
-    Args:
-        solution_title: 解決策のタイトル
-        solution_desc: 解決策の詳細説明
-
-    Returns:
-        dict: {team: [...], team_synergy, team_risk}
+    2. AI に渡す用の社員情報（必要フィールドのみ）に整形
+    3. ai_engine.match_team に社員リスト+解決策を渡す
+    4. AIの選抜結果を返す
     """
     # 全社員データ取得
     employees = get_all_employees()
 
-    # AI に渡す用の社員情報（必要フィールドのみ）
+    # AI に渡す用の社員情報（必要フィールドのみ抜粋）
     emp_for_ai = []
     for emp in employees:
         emp_for_ai.append({
@@ -118,6 +112,7 @@ def build_team_for_solution(solution_title: str, solution_desc: str) -> dict:
             "profile_summary": emp["profile_summary"],
         })
 
+    # JSON文字列に変換（ensure_ascii=False で日本語をそのまま出力）
     employees_json = json.dumps(emp_for_ai, ensure_ascii=False)
     solution_text = f"【{solution_title}】\n{solution_desc}"
 
@@ -127,7 +122,7 @@ def build_team_for_solution(solution_title: str, solution_desc: str) -> dict:
 
 # ---------- MBTI 相性ヘルパー ---------- #
 
-# MBTI の機能ペアの補完性（簡易版）
+# ★ MBTIの相性テーブル（対極タイプが補完関係）
 MBTI_COMPLEMENTS = {
     "ENTJ": ["INTP", "INFP", "ISTP"],
     "ENTP": ["INTJ", "INFJ", "ISTJ"],
@@ -150,7 +145,8 @@ MBTI_COMPLEMENTS = {
 
 def get_mbti_compatibility_note(team_mbtis: list[str]) -> str:
     """
-    チームの MBTI 構成から相性コメントを返す（補助的な情報）。
+    チームの MBTI 構成からバランスコメントを返す。
+    ★ リスト内包表記と sum() でカウントする方法を学ぶ
     """
     e_count = sum(1 for m in team_mbtis if m and m[0] == "E")
     i_count = sum(1 for m in team_mbtis if m and m[0] == "I")
@@ -178,7 +174,6 @@ def get_mbti_compatibility_note(team_mbtis: list[str]) -> str:
 # ---------- テスト用 ---------- #
 
 if __name__ == "__main__":
-    # ダミーのスコアリングデータでランキングテスト
     dummy = [
         {"id": 1, "title": "案A", "scoring": {"total": 18}},
         {"id": 2, "title": "案B", "scoring": {"total": 22}},

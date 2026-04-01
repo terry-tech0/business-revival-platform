@@ -1,12 +1,28 @@
 """
 app.py — Streamlit メインアプリケーション
 ==========================================
-【担当】フロント担当
+【担当者】わーちゃん（フロント担当）
 【役割】ユーザーインターフェースを構築する。
-        「検索 → 市場分析 → 課題一覧 → 解決策 → チーム編成」のフローを管理する。
-        参考アプリの app.py に相当する。
+        「入力 → 市場分析 → 課題探索 → 解決策 → リーンキャンバス → チーム編成」
+        の6ステップのフローを管理する。
 
-起動コマンド: streamlit run app.py
+【起動コマンド】streamlit run app.py
+
+【TODO（写経ポイント）】
+  1. ページ設定 & DB初期化       ★ st.set_page_config() を学ぶ
+  2. セッション状態の初期化       ★ st.session_state を学ぶ
+  3. サイドバー（ナビゲーション）   ★ st.sidebar と条件表示を学ぶ
+  4. STEP 1: 市場・ターゲット入力  ★ st.text_input / st.button を学ぶ
+  5. STEP 2: 市場分析表示         ★ st.tabs / st.expander を学ぶ
+  6. STEP 3: 課題の探索           ★ 動的リスト表示とボタン連携を学ぶ
+  7. STEP 4: 解決策のランキング    ★ st.columns / st.metric を学ぶ
+  8. STEP 5: リーンキャンバス      ★ 新規追加！9ブロック表示を学ぶ
+  9. STEP 6: チーム編成           ★ DB連携と横並び表示を学ぶ
+
+【ヒント】
+  - Streamlit は上から順に実行される（if/elif で画面を切り替える）
+  - st.session_state に値を保存 → 画面遷移しても値が保持される
+  - st.rerun() でページを再描画（ステップ遷移時に使う）
 """
 
 import streamlit as st
@@ -17,6 +33,7 @@ from ai_engine import (
     run_five_forces_analysis,
     generate_issues,
     generate_solutions,
+    generate_lean_canvas,
 )
 from matching import (
     rank_solutions,
@@ -27,9 +44,10 @@ from matching import (
 )
 
 # ---------- ページ設定 ---------- #
+# ★ set_page_config はスクリプトの最初に1回だけ呼ぶ
 
 st.set_page_config(
-    page_title="人財駆動型・企業再興プラットフォーム",
+    page_title="テクゼロン 人財駆動型・企業再興プラットフォーム",
     page_icon="🚀",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -39,9 +57,10 @@ st.set_page_config(
 init_db()
 
 # ---------- セッション状態の初期化 ---------- #
+# ★ session_state は辞書的に使える。ページ遷移しても値が残る。
 
 DEFAULT_STATE = {
-    "current_step": 1,       # 現在のステップ (1-5)
+    "current_step": 1,       # 現在のステップ (1-6)
     "market_input": "",      # 入力された市場・ターゲット
     "pest_result": None,     # PEST分析結果
     "five_forces_result": None,  # 5F分析結果
@@ -49,6 +68,7 @@ DEFAULT_STATE = {
     "selected_issue": None,  # 選択された課題
     "solutions": [],         # 生成された解決策一覧（累積）
     "selected_solution": None,  # 選択された解決策
+    "lean_canvas_result": None,  # ★ リーンキャンバス結果
     "team_result": None,     # チーム編成結果
     "analysis_done": False,  # 市場分析完了フラグ
 }
@@ -59,6 +79,7 @@ for key, default in DEFAULT_STATE.items():
 
 
 # ---------- サイドバー ---------- #
+# ★ with st.sidebar: でサイドバー内にUI要素を配置
 
 with st.sidebar:
     st.markdown("## 🧭 ナビゲーション")
@@ -68,7 +89,8 @@ with st.sidebar:
         "② 市場分析 (PEST/5F)",
         "③ 課題の探索",
         "④ 解決策の生成",
-        "⑤ チーム編成",
+        "⑤ リーンキャンバス",
+        "⑥ チーム編成",
     ]
 
     for i, step_name in enumerate(steps, start=1):
@@ -87,28 +109,29 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.caption("人財駆動型・企業再興プラットフォーム v0.1 (MVP)")
+    st.caption("テクゼロン 人財駆動型・企業再興プラットフォーム v0.2")
 
 
 # ---------- メインヘッダー ---------- #
 
-st.title("🚀 人財駆動型・企業再興プラットフォーム")
-st.caption("市場を入力 → AI分析 → 課題発見 → 解決策生成 → 最適チーム編成")
+st.title("🚀 テクゼロン 人財駆動型・企業再興プラットフォーム")
+st.caption("市場を入力 → AI分析 → 課題発見 → 解決策生成 → リーンキャンバス → 最適チーム編成")
 st.divider()
 
 
 # ============================================================
 # STEP 1: 市場・ターゲット入力
 # ============================================================
+# ★ if/elif で current_step に応じて画面を切り替え
 
 if st.session_state.current_step == 1:
     st.header("① 市場・ターゲットを入力")
-    st.markdown("攻めたい市場やターゲットを自由に入力してください。")
+    st.markdown("テクゼロンが攻めたい市場やターゲットを自由に入力してください。")
 
     market = st.text_input(
         "市場・ターゲット",
         value=st.session_state.market_input,
-        placeholder="例: 訪日外国人アニメツーリズム、シニア向けヘルスケア、地方創生×DX ...",
+        placeholder="例: 製造業DX×設備予兆保全、半導体製造の歩留まり改善、工場の技能承継デジタル化 ...",
     )
 
     col1, col2 = st.columns([1, 4])
@@ -121,14 +144,14 @@ if st.session_state.current_step == 1:
             else:
                 st.warning("市場・ターゲットを入力してください。")
 
-    # 入力例
-    with st.expander("💡 入力例を見る"):
+    # ★ テクゼロンの事業に合った入力例を提示
+    with st.expander("💡 入力例を見る（テクゼロンの強みを活かせるテーマ）"):
         examples = [
-            "訪日外国人アニメツーリズム",
-            "シニア向け健康管理×ウェアラブル",
-            "中小企業の人材不足×AIマッチング",
-            "地方創生×リモートワーク",
-            "食品ロス削減×シェアリングエコノミー",
+            "製造業DX×設備予兆保全サービス",
+            "半導体製造の歩留まり改善×AI分析",
+            "熟練技能者の暗黙知デジタル承継",
+            "産業用ロボットのリモートメンテナンス",
+            "工場のスマートファクトリー化×IoTプラットフォーム",
         ]
         for ex in examples:
             if st.button(ex, key=f"ex_{ex}"):
@@ -140,6 +163,7 @@ if st.session_state.current_step == 1:
 # ============================================================
 # STEP 2: 市場分析 (PEST / 5 Forces)
 # ============================================================
+# ★ st.spinner でローディング表示、st.tabs でタブ切り替え
 
 elif st.session_state.current_step == 2:
     st.header("② 市場分析")
@@ -221,13 +245,13 @@ elif st.session_state.current_step == 2:
 # ============================================================
 # STEP 3: 課題の探索
 # ============================================================
+# ★ ボタンで AI 呼び出し → 結果をリスト表示 → 選択ボタンで次へ
 
 elif st.session_state.current_step == 3:
     st.header("③ 課題の探索")
     st.markdown(f"**対象市場:** {st.session_state.market_input}")
-    st.markdown("AIが市場に関する課題を10個ずつ生成します。納得できるまで何度でも再生成できます。")
+    st.markdown("AIがテクゼロンの技術資産を踏まえた課題を10個ずつ生成します。納得できるまで何度でも再生成できます。")
 
-    # 課題を生成するボタン
     col1, col2 = st.columns([1, 3])
     with col1:
         generate_label = "🔍 課題を生成する" if not st.session_state.issues else "🔄 さらに10個生成"
@@ -238,7 +262,6 @@ elif st.session_state.current_step == 3:
 
             if "error" not in result:
                 new_issues = result.get("issues", [])
-                # IDを通番で振り直す
                 start_id = len(st.session_state.issues) + 1
                 for i, iss in enumerate(new_issues):
                     iss["id"] = start_id + i
@@ -247,7 +270,6 @@ elif st.session_state.current_step == 3:
             else:
                 st.error(f"エラー: {result['error']}")
 
-    # 課題一覧の表示
     if st.session_state.issues:
         st.subheader(f"📋 課題一覧（{len(st.session_state.issues)}件）")
 
@@ -277,6 +299,7 @@ elif st.session_state.current_step == 3:
 # ============================================================
 # STEP 4: 解決策の生成
 # ============================================================
+# ★ rank_solutions() でソート → st.expander + st.columns でスコア表示
 
 elif st.session_state.current_step == 4:
     st.header("④ 解決策の生成")
@@ -287,13 +310,12 @@ elif st.session_state.current_step == 4:
     st.markdown(f"**ターゲット:** {issue.get('target', '')} — {issue.get('detail', '')}")
     st.divider()
 
-    # 解決策を生成するボタン
     col1, col2 = st.columns([1, 3])
     with col1:
         gen_label = "💡 解決策を生成する" if not st.session_state.solutions else "🔄 さらに10個生成"
         if st.button(gen_label, type="primary", use_container_width=True):
             existing = [s["title"] for s in st.session_state.solutions]
-            with st.spinner("🔄 解決策を生成＆スコアリング中..."):
+            with st.spinner("🔄 テクゼロンの強みを活かした解決策を生成＆スコアリング中..."):
                 result = generate_solutions(
                     st.session_state.market_input,
                     issue.get("issue", ""),
@@ -311,7 +333,6 @@ elif st.session_state.current_step == 4:
             else:
                 st.error(f"エラー: {result['error']}")
 
-    # 解決策一覧の表示（ランキング順）
     if st.session_state.solutions:
         ranked = rank_solutions(st.session_state.solutions)
         st.subheader(f"🏆 解決策ランキング（{len(ranked)}件）")
@@ -326,7 +347,6 @@ elif st.session_state.current_step == 4:
             ):
                 st.markdown(sol.get("description", ""))
 
-                # スコアリング詳細
                 st.markdown("---")
                 st.markdown("**📊 スコアリング詳細:**")
 
@@ -340,7 +360,7 @@ elif st.session_state.current_step == 4:
 
                 st.divider()
 
-                if st.button("✅ この解決策でチーム編成へ", key=f"sel_sol_{sol['id']}"):
+                if st.button("✅ この解決策でリーンキャンバスへ", key=f"sel_sol_{sol['id']}"):
                     st.session_state.selected_solution = sol
                     st.session_state.current_step = 5
                     st.rerun()
@@ -354,11 +374,137 @@ elif st.session_state.current_step == 4:
 
 
 # ============================================================
-# STEP 5: チーム編成
+# STEP 5: リーンキャンバス ★ 新規追加！
 # ============================================================
+# ★ AIが生成した9ブロックのリーンキャンバスを表示
 
 elif st.session_state.current_step == 5:
-    st.header("⑤ 最適チーム編成")
+    st.header("⑤ リーンキャンバス")
+
+    sol = st.session_state.selected_solution
+    issue = st.session_state.selected_issue
+    st.markdown(f"**選択した解決策:** {sol.get('title', '')}")
+    st.markdown(f"**概要:** {sol.get('description', '')}")
+    st.divider()
+
+    # リーンキャンバスを生成
+    if st.session_state.lean_canvas_result is None:
+        with st.spinner("🔄 リーンキャンバスを生成中..."):
+            lc = generate_lean_canvas(
+                st.session_state.market_input,
+                issue.get("issue", ""),
+                issue.get("target", ""),
+                sol.get("title", ""),
+                sol.get("description", ""),
+            )
+            st.session_state.lean_canvas_result = lc
+            st.rerun()
+
+    lc = st.session_state.lean_canvas_result
+
+    if lc and "error" not in lc:
+        # --- リーンキャンバス 9ブロック表示 ---
+        st.subheader("📋 リーンキャンバス")
+
+        # 上段: 課題 / 解決策 / UVP / 優位性 / 顧客セグメント
+        row1 = st.columns(5)
+
+        with row1[0]:
+            st.markdown("### 🔴 課題")
+            prob = lc.get("problem", {})
+            for p in prob.get("top3", []):
+                st.markdown(f"- {p}")
+            st.caption(f"既存代替手段: {prob.get('existing_alternatives', '')}")
+
+        with row1[1]:
+            st.markdown("### 💡 解決策")
+            solution = lc.get("solution", {})
+            for f in solution.get("features", []):
+                st.markdown(f"- {f}")
+            st.info(f"テクゼロンの強み活用: {solution.get('techzeron_advantage', '')}")
+
+        with row1[2]:
+            st.markdown("### ⭐ 独自の価値提案")
+            st.success(lc.get("unique_value_proposition", ""))
+
+        with row1[3]:
+            st.markdown("### 🏰 圧倒的優位性")
+            st.warning(lc.get("unfair_advantage", ""))
+
+        with row1[4]:
+            st.markdown("### 👥 顧客セグメント")
+            cs = lc.get("customer_segments", {})
+            st.markdown(f"**ターゲット:** {cs.get('target', '')}")
+            st.caption(f"アーリーアダプター: {cs.get('early_adopter', '')}")
+
+        st.divider()
+
+        # 下段: チャネル / 収益 / コスト / KPI
+        row2 = st.columns(4)
+
+        with row2[0]:
+            st.markdown("### 📢 チャネル")
+            for ch in lc.get("channels", []):
+                st.markdown(f"- {ch}")
+
+        with row2[1]:
+            st.markdown("### 💰 収益の流れ")
+            rev = lc.get("revenue_streams", {})
+            st.markdown(f"**モデル:** {rev.get('model', '')}")
+            st.markdown(f"**価格帯:** {rev.get('pricing', '')}")
+            st.caption(f"LTV見込: {rev.get('ltv_estimate', '')}")
+
+        with row2[2]:
+            st.markdown("### 📉 コスト構造")
+            cost = lc.get("cost_structure", {})
+            st.markdown("**固定費:**")
+            for c in cost.get("fixed_costs", []):
+                st.markdown(f"- {c}")
+            st.markdown("**変動費:**")
+            for c in cost.get("variable_costs", []):
+                st.markdown(f"- {c}")
+            st.caption(f"初期投資: {cost.get('initial_investment', '')}")
+
+        with row2[3]:
+            st.markdown("### 📊 主要指標 (KPI)")
+            for kpi in lc.get("key_metrics", []):
+                st.markdown(f"- {kpi}")
+
+        st.divider()
+
+        # 総評
+        st.info(f"📝 **総評:** {lc.get('summary', '')}")
+
+        st.divider()
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("⬅️ 解決策選択に戻る", use_container_width=True):
+                st.session_state.current_step = 4
+                st.session_state.lean_canvas_result = None
+                st.rerun()
+        with col2:
+            if st.button("🔄 リーンキャンバスを再生成", use_container_width=True):
+                st.session_state.lean_canvas_result = None
+                st.rerun()
+        with col3:
+            if st.button("➡️ チーム編成へ進む", type="primary", use_container_width=True):
+                st.session_state.current_step = 6
+                st.rerun()
+    else:
+        st.error(f"リーンキャンバス生成でエラーが発生しました: {lc.get('error', '不明')}")
+        if st.button("🔄 再試行"):
+            st.session_state.lean_canvas_result = None
+            st.rerun()
+
+
+# ============================================================
+# STEP 6: チーム編成
+# ============================================================
+# ★ build_team_for_solution() → メンバー横並び表示 → MBTI相性コメント
+
+elif st.session_state.current_step == 6:
+    st.header("⑥ 最適チーム編成")
 
     sol = st.session_state.selected_solution
     st.markdown(f"**選択した解決策:** {sol.get('title', '')}")
@@ -367,7 +513,7 @@ elif st.session_state.current_step == 5:
 
     # チーム編成を実行
     if st.session_state.team_result is None:
-        with st.spinner("🔄 最適な4人チームを選抜中..."):
+        with st.spinner("🔄 テクゼロン社員から最適な4人チームを選抜中..."):
             team_data = build_team_for_solution(
                 sol.get("title", ""),
                 sol.get("description", ""),
@@ -382,7 +528,7 @@ elif st.session_state.current_step == 5:
 
         st.subheader("👥 プロジェクトチーム")
 
-        # チームメンバー表示
+        # ★ st.columns でチームメンバーを横並び表示
         member_cols = st.columns(len(team)) if team else []
 
         for i, member in enumerate(team):
@@ -429,7 +575,7 @@ elif st.session_state.current_step == 5:
 
         st.divider()
 
-        # セッション保存
+        # セッション保存 & ナビゲーション
         col1, col2, col3 = st.columns(3)
         with col1:
             if st.button("💾 この結果を保存", use_container_width=True):
@@ -439,6 +585,7 @@ elif st.session_state.current_step == 5:
                     five_forces_result=st.session_state.five_forces_result,
                     selected_issue=json.dumps(st.session_state.selected_issue, ensure_ascii=False),
                     selected_solution=json.dumps(st.session_state.selected_solution, ensure_ascii=False),
+                    lean_canvas_result=st.session_state.lean_canvas_result,
                     team_members=team_data,
                 )
                 st.success(f"✅ セッションを保存しました (ID: {log_id})")
@@ -449,8 +596,8 @@ elif st.session_state.current_step == 5:
                 st.rerun()
 
         with col3:
-            if st.button("⬅️ 解決策選択に戻る", use_container_width=True):
-                st.session_state.current_step = 4
+            if st.button("⬅️ リーンキャンバスに戻る", use_container_width=True):
+                st.session_state.current_step = 5
                 st.session_state.team_result = None
                 st.rerun()
     else:

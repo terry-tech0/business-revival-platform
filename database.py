@@ -1,11 +1,23 @@
 """
 database.py — SQLite データベース操作モジュール
 ================================================
-【担当】DB担当
+【担当者】のずちゃん（DB担当）
 【役割】SQLiteへの接続管理、社員データの取得、セッションログの保存を行う。
-        参考アプリの database.py に相当する。
+        他のモジュール（app.py, matching.py）から呼び出される「データの窓口」。
 
-このモジュールは schema.sql で定義されたテーブルに対して CRUD 操作を提供する。
+【TODO（写経ポイント）】
+  1. get_connection()          ★ DB接続とrow_factory設定を学ぶ
+  2. init_db()                 ★ テーブル初期化 & 自動seed を学ぶ
+  3. get_all_employees()       ★ SELECT * の基本を学ぶ
+  4. get_employee_by_id()      ★ WHERE句とパラメータバインディングを学ぶ
+  5. get_employees_by_ids()    ★ IN句の動的生成を学ぶ
+  6. search_employees_by_skill() ★ LIKE句による部分一致検索を学ぶ
+  7. save_session_log()        ★ INSERT + json.dumps を学ぶ（リーンキャンバス対応）
+
+【ヒント】
+  - sqlite3 は Python 標準ライブラリ（pip install 不要）
+  - conn.row_factory = sqlite3.Row で結果を dict 風に扱える
+  - SQL の ? はプレースホルダー（SQLインジェクション対策として必須）
 """
 
 import json
@@ -17,12 +29,10 @@ DB_PATH = Path("data/tech0_hr.db")
 
 # ---------- 接続管理 ---------- #
 
-
 def get_connection() -> sqlite3.Connection:
     """
     SQLite データベースへの接続を返す。
-    - data/ フォルダがなければ自動作成
-    - Row を dict 風に使えるようにする
+    ★ row_factory を設定すると row["name"] のように辞書風にアクセスできて便利！
     """
     DB_PATH.parent.mkdir(exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
@@ -33,8 +43,7 @@ def get_connection() -> sqlite3.Connection:
 def init_db():
     """
     schema.sql を実行してテーブルを初期化する。
-    既にテーブルがある場合は何もしない（IF NOT EXISTS）。
-    テーブル作成後、社員データが0件なら自動で seed を実行する。
+    ★ 社員データが0件なら seed_data.py を自動実行する（初回起動時のみ）
     """
     conn = get_connection()
     with open("schema.sql", "r", encoding="utf-8") as f:
@@ -52,11 +61,10 @@ def init_db():
 
 # ---------- 社員データ取得 ---------- #
 
-
 def get_all_employees() -> list[dict]:
     """
     全社員データを取得して dict のリストで返す。
-    マッチングエンジンに渡すために使う。
+    ★ [dict(row) for row in rows] で sqlite3.Row → dict に変換
     """
     conn = get_connection()
     cursor = conn.execute("SELECT * FROM employees ORDER BY id")
@@ -68,6 +76,7 @@ def get_all_employees() -> list[dict]:
 def get_employee_by_id(employee_id: int) -> dict | None:
     """
     社員IDで1名分のデータを取得する。
+    ★ パラメータは (employee_id,) とタプルで渡す（カンマ忘れに注意！）
     """
     conn = get_connection()
     cursor = conn.execute("SELECT * FROM employees WHERE id = ?", (employee_id,))
@@ -79,6 +88,7 @@ def get_employee_by_id(employee_id: int) -> dict | None:
 def get_employees_by_ids(ids: list[int]) -> list[dict]:
     """
     複数の社員IDでデータを取得する。
+    ★ IN句の ? を動的に生成する方法を学ぶ
     """
     if not ids:
         return []
@@ -95,6 +105,7 @@ def get_employees_by_ids(ids: list[int]) -> list[dict]:
 def search_employees_by_skill(skill: str) -> list[dict]:
     """
     スキルで社員を部分一致検索する。
+    ★ LIKE '%Python%' のように前後に % をつけて部分一致
     """
     conn = get_connection()
     cursor = conn.execute(
@@ -107,17 +118,19 @@ def search_employees_by_skill(skill: str) -> list[dict]:
 
 # ---------- セッションログ ---------- #
 
-
 def save_session_log(
     market_input: str,
     pest_result: dict | None = None,
     five_forces_result: dict | None = None,
     selected_issue: str | None = None,
     selected_solution: str | None = None,
+    lean_canvas_result: dict | None = None,
     team_members: list | None = None,
 ) -> int:
     """
     1回のセッション結果をログとして保存する。
+    ★ dict/list は json.dumps() で文字列に変換してから保存
+    ★ リーンキャンバス結果(lean_canvas_result)の保存に対応
 
     Returns:
         int: 挿入されたログのID
@@ -127,8 +140,8 @@ def save_session_log(
         """
         INSERT INTO session_logs
             (market_input, pest_result, five_forces_result,
-             selected_issue, selected_solution, team_members)
-        VALUES (?, ?, ?, ?, ?, ?)
+             selected_issue, selected_solution, lean_canvas_result, team_members)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             market_input,
@@ -136,6 +149,7 @@ def save_session_log(
             json.dumps(five_forces_result, ensure_ascii=False) if five_forces_result else None,
             selected_issue,
             selected_solution,
+            json.dumps(lean_canvas_result, ensure_ascii=False) if lean_canvas_result else None,
             json.dumps(team_members, ensure_ascii=False) if team_members else None,
         ),
     )
@@ -150,6 +164,6 @@ def save_session_log(
 if __name__ == "__main__":
     init_db()
     employees = get_all_employees()
-    print(f"社員数: {len(employees)}")
+    print(f"テクゼロン社員数: {len(employees)}")
     for emp in employees[:3]:
         print(f"  {emp['name']} ({emp['department']}) - MBTI: {emp['mbti']}")

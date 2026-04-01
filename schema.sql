@@ -1,7 +1,23 @@
--- schema.sql
--- 人財駆動型・企業再興プラットフォーム DB設計
+-- ============================================================
+-- schema.sql — データベーススキーマ定義
+-- ============================================================
+-- 【担当者】のずちゃん（DB担当）
+--
+-- 【TODO（写経ポイント）】
+--   1. employees テーブル  ★ CREATE TABLE 文の書き方を学ぶ
+--   2. session_logs テーブル ★ JSON文字列をTEXT型で保存する設計を学ぶ
+--   3. インデックス       ★ 検索高速化のための INDEX を学ぶ
+--
+-- 【ヒント】
+--   - CREATE TABLE IF NOT EXISTS で既存テーブルがあってもエラーにならない
+--   - INTEGER PRIMARY KEY AUTOINCREMENT で自動採番
+--   - TEXT はカンマ区切りで複数値を保存（例: "Python,AI,財務"）
+--   - REAL は小数点付き数値（スコア等）
+--   - DEFAULT で初期値設定（DEFAULT 0, DEFAULT CURRENT_TIMESTAMP）
+-- ============================================================
 
--- 社員テーブル（人財DB）
+
+-- TODO 1: 社員テーブル（テクゼロン人財DB）
 CREATE TABLE IF NOT EXISTS employees (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT NOT NULL,
@@ -23,7 +39,8 @@ CREATE TABLE IF NOT EXISTS employees (
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- セッションログ（分析結果の保存用、将来拡張）
+-- TODO 2: セッションログ（分析結果の保存用）
+-- ★ リーンキャンバス結果の保存カラムを追加
 CREATE TABLE IF NOT EXISTS session_logs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     market_input    TEXT NOT NULL,
@@ -31,11 +48,12 @@ CREATE TABLE IF NOT EXISTS session_logs (
     five_forces_result TEXT,
     selected_issue  TEXT,
     selected_solution TEXT,
+    lean_canvas_result TEXT,        -- ★ 新規追加：リーンキャンバスJSON
     team_members    TEXT,           -- JSON形式で保存
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- インデックス
+-- TODO 3: インデックス（検索高速化）
 CREATE INDEX IF NOT EXISTS idx_employee_skills ON employees(skills);
 CREATE INDEX IF NOT EXISTS idx_employee_mbti ON employees(mbti);
 CREATE INDEX IF NOT EXISTS idx_employee_department ON employees(department);
